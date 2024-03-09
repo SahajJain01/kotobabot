@@ -70,7 +70,7 @@ client.on("messageCreate", async (message) => {
 
           await e.webhook.send({
             content: content,
-            username: message.author.displayName,
+            username: message.member.nickname,
             avatarURL:
               message.author.avatarURL() || message.author.defaultAvatarURL,
           });
