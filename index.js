@@ -1,5 +1,6 @@
 import { Client, GatewayIntentBits, WebhookClient } from "discord.js";
 
+const TRANSLATE_APIURL = Bun.env.TRANSLATE_APIURL;
 const DISCORD_TOKEN = Bun.env.DISCORD_TOKEN;
 const CHANNEL_IDS = Bun.env.CHANNEL_IDS.split(",");
 const CHANNEL_LANGS = Bun.env.CHANNEL_LANGS.split(",");
@@ -31,57 +32,52 @@ client.on("ready", async () => {
 
 client.on("messageCreate", async (message) => {
   var idx = CHANNEL_IDS.indexOf(message.channel.id);
-  if (!message.guild || idx < 0 || message.author.bot || message.webhookID)
+  if (!message.guild || idx < 0 || message.author.bot || message.webhookID || message.content.substring(0,2) == "$s")
     return;
 
   try {
     await Promise.all(
       channels.map(async (e, i) => {
         if (i !== idx) {
-          const translationResponse = await Bun.fetch(
-            "https://translate.sahajjain.com/translate",
-            {
-              method: "POST",
-              body: JSON.stringify({
-                q: message.content,
-                source: channels[idx].lang,
-                target: e.lang,
-                format: "text",
-              }),
-              headers: { "Content-Type": "application/json" },
-            }
-          );
+          var content = "";
+          if (message.content && message.content.substring(0,2) !== "$n") {
+            const translationResponse = await Bun.fetch(
+              TRANSLATE_APIURL,
+              {
+                method: "POST",
+                body: JSON.stringify({
+                  q: message.content,
+                  source: channels[idx].lang,
+                  target: e.lang,
+                  format: "text",
+                }),
+                headers: { "Content-Type": "application/json" },
+              }
+            );
+            const translationData = await translationResponse.json();
+            content += translationData.translatedText;
+          } else {
+            content += message.content;
+          }
 
-          const translationData = await translationResponse.json();
-          const translatedText = translationData.translatedText;
+          if (message.attachments.size > 0) {
+            content += "\n";
+            for (const attachment of message.attachments.values()) {
+              const attachmentUrl = attachment.url;
+              content += `${attachmentUrl} `;
+            }
+          }
 
           await e.webhook.send({
-            content: translatedText,
+            content: content,
             username: message.author.globalName,
             avatarURL:
               message.author.avatarURL() || message.author.defaultAvatarURL,
           });
 
           console.log(
-            `Translated "${message.content}" to "${translatedText}" and sent to target channel.`
+            `Translated "${message.content}" to "${content}" and sent to target channel.`
           );
-
-          if(message.attachments.size > 0) {
-            const targetChannel = message.guild.channels.cache.get(e.id);
-            for (const attachment of message.attachments.values()) {
-              const attachmentUrl = attachment.url;
-              const fileName = attachment.name;
-              try {
-                await targetChannel.send({
-                  content: `**${message.author.globalName}:**`,
-                  files: [{ attachment: attachmentUrl, name: fileName }],
-                });
-                console.log(`Successfully forwarded attachment: ${fileName}`);
-              } catch (error) {
-                console.error(`Error forwarding attachment: ${error}`);
-              }
-            }
-          }
         }
       })
     );
