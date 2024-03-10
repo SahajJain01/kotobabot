@@ -32,7 +32,13 @@ client.on("ready", async () => {
 
 client.on("messageCreate", async (message) => {
   var idx = CHANNEL_IDS.indexOf(message.channel.id);
-  if (!message.guild || idx < 0 || message.author.bot || message.webhookID || message.content.substring(0,2) == "$s")
+  if (
+    !message.guild ||
+    idx < 0 ||
+    message.author.bot ||
+    message.webhookID ||
+    message.content.substring(0, 2) == "$s"
+  )
     return;
 
   try {
@@ -40,22 +46,24 @@ client.on("messageCreate", async (message) => {
       channels.map(async (e, i) => {
         if (i !== idx) {
           var content = "";
-          if (message.content && message.content.substring(0,2) !== "$n") {
-            const translationResponse = await Bun.fetch(
-              TRANSLATE_APIURL,
-              {
+          if (message.content && message.content.substring(0, 2) !== "$n") {
+            const result = extractAndRemoveUrls(message.content);
+            console.log("Extracted URLs:", result.extractedUrls);
+            if(result.text) {
+              const translationResponse = await Bun.fetch(TRANSLATE_APIURL, {
                 method: "POST",
                 body: JSON.stringify({
-                  q: message.content,
+                  q: result.text,
                   source: channels[idx].lang,
                   target: e.lang,
                   format: "text",
                 }),
                 headers: { "Content-Type": "application/json" },
-              }
-            );
-            const translationData = await translationResponse.json();
-            content += translationData.translatedText;
+              });
+              const translationData = await translationResponse.json();
+              content += translationData.translatedText;
+            }
+            content += `\n${result.extractedUrls.join(" ")}`
           } else {
             content += message.content;
           }
@@ -70,7 +78,9 @@ client.on("messageCreate", async (message) => {
 
           await e.webhook.send({
             content: content,
-            username: message.member.nickname?message.member.nickname:message.author.displayName,
+            username: message.member.nickname
+              ? message.member.nickname
+              : message.author.displayName,
             avatarURL:
               message.author.avatarURL() || message.author.defaultAvatarURL,
           });
@@ -89,3 +99,20 @@ client.on("messageCreate", async (message) => {
 client.login(DISCORD_TOKEN).catch((error) => {
   console.error("Login error:", error);
 });
+
+function extractAndRemoveUrls(text) {
+  const urlRegex = /https?:\/\/[^\s]+/g; // Match URLs starting with http or https
+  const matches = text.matchAll(urlRegex);
+  const extractedUrls = [];
+
+  let newText = text;
+  for (const match of matches) {
+    extractedUrls.push(match[0]);
+    newText = newText.replace(match[0], "");
+  }
+
+  return {
+    extractedUrls,
+    text: newText,
+  };
+}
