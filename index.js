@@ -1,22 +1,10 @@
-import { Client, GatewayIntentBits, WebhookClient } from "discord.js";
+import { Client, GatewayIntentBits } from "discord.js";
 
 const TRANSLATE_APIURL = Bun.env.TRANSLATE_APIURL;
 const DISCORD_TOKEN = Bun.env.DISCORD_TOKEN;
-const CHANNEL_IDS = Bun.env.CHANNEL_IDS.split(",");
-const CHANNEL_LANGS = Bun.env.CHANNEL_LANGS.split(",");
-const WEBHOOK_IDS = Bun.env.WEBHOOK_IDS.split(",");
-const WEBHOOK_TOKENS = Bun.env.WEBHOOK_TOKENS.split(",");
 
-const channels = CHANNEL_IDS.map((e, i) => {
-  return {
-    id: e,
-    lang: CHANNEL_LANGS[i],
-    webhook: new WebhookClient({
-      id: WEBHOOK_IDS[i],
-      token: WEBHOOK_TOKENS[i],
-    }),
-  };
-});
+let channels;
+let channelIds;
 
 const client = new Client({
   intents: [
@@ -28,10 +16,37 @@ const client = new Client({
 
 client.on("ready", async () => {
   console.log(`Logged in as ${client.user?.tag}!`);
+  getChannelNames();
+});
+
+client.on("channelUpdate", (oldChannel, newChannel) => {
+  if (
+    oldChannel.parent.name.toLowerCase().includes("translate") &&
+    oldChannel.name !== newChannel.name
+  ) {
+    console.log(
+      `Channel name changed from "${oldChannel.name}" to "${newChannel.name}"`
+    );
+    getChannelNames();
+  }
+});
+
+client.on("channelCreate", async (channel) => {
+  console.log(`Channel created: ${channel.name} (ID: ${channel.id})`);
+  if (channel.parent.name.toLowerCase().includes("translate")) {
+    getChannelNames();
+  }
+});
+
+client.on("channelDelete", async (channel) => {
+  console.log(`Channel deleted: ${channel.name} (ID: ${channel.id})`);
+  if (channel.parent.name.toLowerCase().includes("translate")) {
+    getChannelNames();
+  }
 });
 
 client.on("messageCreate", async (message) => {
-  var idx = CHANNEL_IDS.indexOf(message.channel.id);
+  var idx = channelIds.indexOf(message.channel.id);
   if (
     !message.guild ||
     idx < 0 ||
@@ -48,8 +63,7 @@ client.on("messageCreate", async (message) => {
           var content = "";
           if (message.content && message.content.substring(0, 2) !== "$n") {
             const result = extractAndRemoveUrls(message.content);
-            console.log("Extracted URLs:", result.extractedUrls);
-            if(result.text) {
+            if (result.text) {
               const translationResponse = await Bun.fetch(TRANSLATE_APIURL, {
                 method: "POST",
                 body: JSON.stringify({
@@ -63,7 +77,10 @@ client.on("messageCreate", async (message) => {
               const translationData = await translationResponse.json();
               content += translationData.translatedText;
             }
-            content += `\n${result.extractedUrls.join(" ")}`
+            if (result.extractedUrls.length) {
+              console.log("Extracted URLs:", result.extractedUrls);
+              content += `\n${result.extractedUrls.join(" ")}`;
+            }
           } else {
             content += message.content;
           }
@@ -115,4 +132,38 @@ function extractAndRemoveUrls(text) {
     extractedUrls,
     text: newText,
   };
+}
+
+async function getChannelNames() {
+  const chs = client.guilds.cache.first()?.channels.cache.values();
+
+  if (!chs) {
+    console.log("No channels found.");
+    return;
+  }
+
+  channels = [];
+  channelIds = [];
+
+  for (const channel of chs) {
+    const category = channel.parent;
+    if (category && category.name.toLowerCase().includes("translate")) {
+      const webhooks = await channel.fetchWebhooks();
+      let webhook;
+      if (webhooks.size) {
+        webhook = webhooks.first();
+      } else {
+        webhook = await channel.createWebhook({
+          name: "Webhook",
+        });
+        console.log("Webhook created for " + channel.name);
+      }
+      channels.push({
+        lang: channel.name.slice(-2),
+        webhook: webhook,
+      });
+      channelIds.push(channel.id);
+    }
+  }
+  console.log("Built channel list");
 }
