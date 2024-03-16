@@ -1,5 +1,5 @@
 {
-  "name": "tsuno",
+  "name": "kotobabot",
   "module": "index.js",
   "type": "module",
   "devDependencies": {
