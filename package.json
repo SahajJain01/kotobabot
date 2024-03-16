@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "discord.js": "^14.14.1",
-    "discordeno": "^18.0.1"
+    "discordeno": "^18.0.1",
+    "luxon": "^3.4.4"
   }
 }
