@@ -4,8 +4,7 @@ import { DateTime } from "luxon";
 const TRANSLATE_APIURL = Bun.env.TRANSLATE_APIURL;
 const DISCORD_TOKEN = Bun.env.DISCORD_TOKEN;
 
-let channels;
-let channelIds;
+const serverData = new Map();
 
 const errStr =
   "Invalid time format. Please provide the time in the format HH:MM.";
@@ -36,16 +35,16 @@ const extractAndRemoveUrls = function (text) {
   };
 };
 
-const getChannelNames = async function () {
-  const chs = client.guilds.cache.first()?.channels.cache.values();
+const getChannelNames = async function (serverId) {
+  const chs = client.guilds.cache.get(serverId)?.channels.cache.values();
 
   if (!chs) {
     console.log("No channels found.");
     return;
   }
 
-  channels = [];
-  channelIds = [];
+  let channels = [];
+  let channelIds = [];
 
   for (const channel of chs) {
     const category = channel.parent;
@@ -67,7 +66,11 @@ const getChannelNames = async function () {
       channelIds.push(channel.id);
     }
   }
-  console.log("Built channel list");
+  serverData.set(serverId, {
+    channels: channels,
+    channelIds: channelIds
+  });
+  console.log("Built channel list for guild: " + serverId);
 };
 
 const getResStr = function (utcTimestamp) {
@@ -76,7 +79,12 @@ const getResStr = function (utcTimestamp) {
 
 client.on("ready", async () => {
   console.log(`Logged in as ${client.user?.tag}!`);
-  getChannelNames();
+
+  //client.user.setPresence({ activities: [{ name: 'At your service' }], status: 'online' });
+
+  client.guilds.cache.forEach((guild) => {
+    getChannelNames(guild.id);
+  });
 
   const atCommand = new SlashCommandBuilder()
     .setName("at")
@@ -119,33 +127,42 @@ client.on("ready", async () => {
   client.application.commands.create(inCommand);
 });
 
+client.on('guildCreate', (guild) => {
+  getChannelNames(guild.id);
+});
+
 client.on("channelUpdate", (oldChannel, newChannel) => {
   if (
-    oldChannel.parent.name.toLowerCase().includes("translate") &&
+    oldChannel.parent?.name.toLowerCase().includes("translate") &&
     oldChannel.name !== newChannel.name
   ) {
+    getChannelNames(oldChannel.guild.id);
     console.log(
       `Channel name changed from "${oldChannel.name}" to "${newChannel.name}"`
     );
-    getChannelNames();
   }
 });
 
 client.on("channelCreate", async (channel) => {
-  console.log(`Channel created: ${channel.name} (ID: ${channel.id})`);
-  if (channel.parent.name.toLowerCase().includes("translate")) {
-    getChannelNames();
+  if (channel.parent?.name.toLowerCase().includes("translate")) {
+    getChannelNames(channel.guild.id);
   }
+  console.log(`Channel created: ${channel.name} (ID: ${channel.id})`);
 });
 
 client.on("channelDelete", async (channel) => {
-  console.log(`Channel deleted: ${channel.name} (ID: ${channel.id})`);
-  if (channel.parent.name.toLowerCase().includes("translate")) {
-    getChannelNames();
+  if (channel.parent?.name.toLowerCase().includes("translate")) {
+    getChannelNames(channel.guild.id);
   }
+  console.log(`Channel deleted: ${channel.name} (ID: ${channel.id})`);
 });
 
 client.on("messageCreate", async (message) => {
+
+  const server = serverData.get(message.guild.id);
+  const channels = server.channels;
+  const channelIds = server.channelIds;
+
   var idx = channelIds.indexOf(message.channel.id);
   if (
     !message.guild ||
