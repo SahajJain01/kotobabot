@@ -15,6 +15,7 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.GuildIntegrations,
     GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMessageReactions,
   ],
 });
 
@@ -60,6 +61,7 @@ const getChannelNames = async function (serverId) {
         console.log("Webhook created for " + channel.name);
       }
       channels.push({
+        id: channel.id,
         lang: channel.name.slice(-2),
         webhook: webhook,
       });
@@ -227,6 +229,28 @@ client.on("messageCreate", async (message) => {
     );
   } catch (error) {
     console.error("Error during translation or webhook sending:", error);
+  }
+});
+
+client.on('messageReactionAdd', async (reaction, user) => {
+  if (user.bot) return;
+
+  const message = reaction.message;
+
+  const server = serverData.get(message.guild.id);
+  const channels = server.channels;
+
+  const channel = channels.find(o => o.id === message.channel.id);
+
+  if (!message.webhookId == channel.webhook) return;
+
+  if (reaction.emoji.name === '🗑️') {
+    try {
+      await message.delete();
+      console.log(`Deleted message (ID: ${message.id})`);
+    } catch (error) {
+      console.error(`Error deleting message: ${error}`);
+    }
   }
 });
 
